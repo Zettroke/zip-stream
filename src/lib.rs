@@ -1,5 +1,6 @@
 use bytes::{Bytes, BytesMut, BufMut};
 use std::io::Read;
+use bytes::buf::Limit;
 
 
 pub fn kappa() -> u32 {
@@ -37,38 +38,80 @@ impl LocalHeader {
     }
 }
 
-struct ZipPacker<T> where T: AsMut<dyn Read> {
-    buffer: BytesMut,
-    files: Vec<(String, T)>
+struct ZipEntry<T: AsMut<dyn Read>> {
+    name: String,
+    reader: T
 }
 
-impl<T> ZipPacker<T> where T: AsMut<dyn Read> {
-    pub fn new() -> Self {
+struct ZipPacker<T, I = Vec<ZipEntry<T>>> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEntry<T>> {
+    files: I
+}
+
+impl<T, I> ZipPacker<T, I> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEntry<T>> {
+    // pub fn new() -> Self {
+    //     ZipPacker {
+    //         buffer: BytesMut::with_capacity(64*1024),
+    //         files: vec![]
+    //     }
+    // }
+
+    // pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<T>) {
+    //     self.files.push(entry);
+    // }
+
+    pub fn with_file_iterator<II: IntoIterator<Item=ZipEntry<T>>>(iter: II) -> ZipPacker<T, II> {
         ZipPacker {
-            buffer: BytesMut::with_capacity(64*1024),
+            files: iter,
+        }
+    }
+
+    pub fn reader(self) -> ZipReader<T, I::IntoIter> {
+        ZipReader {
+            files_iter: self.files.into_iter(),
+            current_entry: None,
+            buff: BytesMut::with_capacity(64*1024)
+        }
+    }
+}
+
+impl<T: AsMut<dyn Read>> ZipPacker<T> {
+    pub fn new() -> Self {
+        Self {
             files: vec![]
         }
     }
 
-    pub fn add_file<S: Into<String>>(&mut self, name: S, file: T) {
-        self.files.push((name.into(), file));
-        // self.buffer.put_u128_le()
+    pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<T>) {
+        self.files.push(entry);
     }
+}
 
-    fn fill_out_buff(&mut self) {
+struct ZipReader<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> {
+    files_iter: I,
+    current_entry: Option<ZipEntry<T>>,
+    buff: Limit<BytesMut>
+}
 
+impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> ZipReader<T, I> {
+    fn advance(&mut self) {
 
     }
 }
 
-
-impl<T> Read for ZipPacker<T> where T: AsMut<dyn Read> {
+impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> Read for ZipReader<T, I> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.fill_out_buff();
-        // self.buffer.advance()
-        Ok(0)
+        // if buf.len() <= self.buff.
+        let chain = buf.chain_mut(&mut self.buff);
     }
 }
+
+// impl<T> Read for ZipPacker<T> where T: AsMut<dyn Read> {
+//     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//         self.fill_out_buff();
+//         // self.buffer.advance()
+//         Ok(0)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
