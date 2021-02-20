@@ -1,7 +1,6 @@
 use bytes::{Bytes, BytesMut, BufMut};
-use std::io::Read;
+use std::io::{Read, Cursor};
 use bytes::buf::Limit;
-
 
 pub fn kappa() -> u32 {
     1337
@@ -33,7 +32,7 @@ impl LocalHeader {
         buff.put_u32_le(0);
         buff.put_u32_le(0);
         buff.put_u16_le(self.file_name.len() as u16);
-        buff.put_u16_le(self.extra_field_length);
+        buff.put_u16_le(0);
         buff.put_slice(self.file_name.as_bytes());
     }
 }
@@ -68,8 +67,8 @@ impl<T, I> ZipPacker<T, I> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEnt
     pub fn reader(self) -> ZipReader<T, I::IntoIter> {
         ZipReader {
             files_iter: self.files.into_iter(),
-            current_entry: None,
-            buff: BytesMut::with_capacity(64*1024)
+            state: ZipReaderState::Initial,
+            remainder: Cursor::new(Vec::new())
         }
     }
 }
@@ -86,22 +85,68 @@ impl<T: AsMut<dyn Read>> ZipPacker<T> {
     }
 }
 
+enum ZipReaderState<T: AsMut<dyn Read>> {
+    Initial,
+    EntryHeader(ZipEntry<T>),
+    EntryBody(ZipEntry<T>),
+    EntryTail(ZipEntry<T>)
+}
+
 struct ZipReader<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> {
     files_iter: I,
-    current_entry: Option<ZipEntry<T>>,
-    buff: Limit<BytesMut>
+    // current_entry: Option<ZipEntry<T>>,
+
+    state: ZipReaderState<T>,
+
+    remainder: Cursor<Vec<u8>>
 }
 
 impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> ZipReader<T, I> {
     fn advance(&mut self) {
 
     }
+
+    fn write_entry_header(&mut self, entry: &ZipEntry<T>, mut buff: &mut [u8]) {
+        if buff.len() >= 30 + entry.name.len() {
+            Self::write_entry_header_impl(&entry, buff);
+        } else {
+            Self::write_entry_header_impl(&entry, buff.chain_mut(self.remainder.get_mut()));
+        }
+    }
+
+    fn write_entry_header_impl<T: BufMut>(entry: &ZipEntry<T>, mut buff: T) {
+        buff.put_u32_le(0x04034b50);
+        buff.put_u16_le(0xA);
+        buff.put_u16_le(0b00000000_00001000);
+        buff.put_u16_le(0);
+        buff.put_u16_le(/*self.modification_time*/ 0);
+        buff.put_u16_le(/*self.modification_date*/ 0);
+        buff.put_u32_le(0);
+        buff.put_u32_le(0);
+        buff.put_u32_le(0);
+        buff.put_u16_le(entry.name.len() as u16);
+        buff.put_u16_le(0);
+        buff.put_slice(entry.name.as_bytes());
+    }
 }
 
 impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> Read for ZipReader<T, I> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // if buf.len() <= self.buff.
-        let chain = buf.chain_mut(&mut self.buff);
+        // if we have remaining bytes from previous read, we flushing them all
+        if self.remainder.get_ref().len() > 0 {
+            return self.remainder.read(buf);
+        }
+
+        match &self.state {
+            ZipReaderState::Initial => {
+                let entry = self.files_iter.next().unwrap();
+                self.write_entry_header(&entry, buf);
+
+                self.state = ZipReaderState::EntryBody(entry);
+            }
+            _ => {}
+        }
+        Ok(0)
     }
 }
 
