@@ -1,6 +1,8 @@
 use bytes::{Bytes, BytesMut, BufMut};
 use std::io::{Read, Cursor};
 use bytes::buf::Limit;
+use std::cmp;
+use std::iter::Zip;
 
 pub fn kappa() -> u32 {
     1337
@@ -37,12 +39,19 @@ impl LocalHeader {
     }
 }
 
-struct ZipEntry<T: AsMut<dyn Read>> {
+struct ZipEntry<R: Read> {
     name: String,
-    reader: T
+    reader: R,
+    compressed_size: usize,
+    uncompressed_size: usize
 }
 
-impl<T: AsMut<dyn Read>> ZipEntry<T> {
+impl<R: Read> ZipEntry<R> {
+
+    pub fn header_len(&self) -> usize {
+        30 + self.name.len()
+    }
+
     pub fn write_local_file_header<B: BufMut>(&self, mut buff: B) {
         buff.put_u32_le(0x04034b50);
         buff.put_u16_le(0xA);
@@ -57,13 +66,23 @@ impl<T: AsMut<dyn Read>> ZipEntry<T> {
         buff.put_u16_le(0);
         buff.put_slice(self.name.as_bytes());
     }
+
+    pub fn tail_header_len(&self) -> usize {
+        12
+    }
+
+    pub fn write_tail_header<B: BufMut>(&self, mut buff: B) {
+        buff.put_u32_le(0 /* crc */);
+        buff.put_u32_le(self.compressed_size as u32);
+        buff.put_u32_le(self.uncompressed_size as u32);
+    }
 }
 
-struct ZipPacker<T, I = Vec<ZipEntry<T>>> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEntry<T>> {
+struct ZipPacker<R, I = Vec<ZipEntry<R>>> where R: Read, I: IntoIterator<Item=ZipEntry<R>> {
     files: I
 }
 
-impl<T, I> ZipPacker<T, I> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEntry<T>> {
+impl<R, I> ZipPacker<R, I> where R: Read, I: IntoIterator<Item=ZipEntry<R>> {
     // pub fn new() -> Self {
     //     ZipPacker {
     //         buffer: BytesMut::with_capacity(64*1024),
@@ -71,17 +90,17 @@ impl<T, I> ZipPacker<T, I> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEnt
     //     }
     // }
 
-    // pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<T>) {
+    // pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<R>) {
     //     self.files.push(entry);
     // }
 
-    pub fn with_file_iterator<II: IntoIterator<Item=ZipEntry<T>>>(iter: II) -> ZipPacker<T, II> {
+    pub fn with_file_iterator<II: IntoIterator<Item=ZipEntry<R>>>(iter: II) -> ZipPacker<R, II> {
         ZipPacker {
             files: iter,
         }
     }
 
-    pub fn reader(self) -> ZipReader<T, I::IntoIter> {
+    pub fn reader(self) -> ZipReader<R, I::IntoIter> {
         ZipReader {
             files_iter: self.files.into_iter(),
             state: ZipReaderState::Initial,
@@ -90,69 +109,126 @@ impl<T, I> ZipPacker<T, I> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEnt
     }
 }
 
-impl<T: AsMut<dyn Read>> ZipPacker<T> {
+impl<R: Read> ZipPacker<R> {
     pub fn new() -> Self {
         Self {
             files: vec![]
         }
     }
 
-    pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<T>) {
+    pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<R>) {
         self.files.push(entry);
     }
 }
 
-enum ZipReaderState<T: AsMut<dyn Read>> {
+enum ZipReaderState<R: Read> {
     Initial,
-    EntryHeader(ZipEntry<T>),
-    EntryBody(ZipEntry<T>),
-    EntryTail(ZipEntry<T>)
+    EntryHeader(ZipEntry<R>),
+    EntryBody(ZipEntry<R>),
+    EntryTail(ZipEntry<R>),
+    CentralDirectory
 }
 
-struct ZipReader<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> {
+struct ZipReader<R: Read, I: Iterator<Item=ZipEntry<R>>> {
     files_iter: I,
-    // current_entry: Option<ZipEntry<T>>,
 
-    state: ZipReaderState<T>,
+    state: ZipReaderState<R>,
 
     remainder: Cursor<Vec<u8>>
 }
 
-impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> ZipReader<T, I> {
+impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
     fn advance(&mut self) {
 
     }
 
-    fn write_entry_header(&mut self, entry: &ZipEntry<T>, mut buff: &mut [u8]) {
-        if buff.len() >= 30 + entry.name.len() {
+    fn write_entry_header(&mut self, entry: &ZipEntry<R>, mut buff: &mut [u8]) -> usize {
+        let mut n = cmp::min(entry.header_len(), buff.len());
+        if buff.len() >= entry.header_len() {
             entry.write_local_file_header(buff);
         } else {
             entry.write_local_file_header(buff.chain_mut(self.remainder.get_mut()));
         }
+
+        return n;
+    }
+
+    fn write_entry_tail(&mut self, entry: &ZipEntry<R>, mut buff: &mut [u8]) -> usize {
+        let mut n = cmp::min(entry.tail_header_len(), buff.len());
+        if buff.len() >= entry.tail_header_len() {
+            entry.write_tail_header(buff);
+        } else {
+            entry.write_tail_header(buff.chain_mut(self.remainder.get_mut()));
+        }
+
+        return n;
     }
 }
 
-impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> Read for ZipReader<T, I> {
+impl<R: Read, I: Iterator<Item=ZipEntry<R>>> Read for ZipReader<R, I> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // if we have remaining bytes from previous read, we flushing them all
         if self.remainder.get_ref().len() > 0 {
-            return self.remainder.read(buf);
+            let n = self.remainder.read(buf);
+            if self.remainder.position() as usize == self.remainder.get_ref().len() {
+                self.remainder.get_mut().clear();
+                self.remainder.set_position(0);
+            }
+            return n;
         }
 
-        match &self.state {
+        match std::mem::replace(&mut self.state, ZipReaderState::Initial) {
             ZipReaderState::Initial => {
                 let entry = self.files_iter.next().unwrap();
-                self.write_entry_header(&entry, buf);
+                let n = self.write_entry_header(&entry, buf);
 
                 self.state = ZipReaderState::EntryBody(entry);
-            }
+
+                return Ok(n);
+            },
+            ZipReaderState::EntryHeader(mut entry) => {
+                let n = self.write_entry_header(&entry, buf);
+
+                self.state = ZipReaderState::EntryBody(entry);
+
+                return Ok(n);
+            },
+            ZipReaderState::EntryBody(mut entry) => {
+                let res = entry.reader.read(buf);
+                if let Ok(n) = res {
+                    entry.uncompressed_size += n;
+                    entry.compressed_size += n;
+                    if n == 0 {
+                        self.state = ZipReaderState::EntryTail(entry);
+                        return Ok(0);
+                    }
+                }
+                self.state = ZipReaderState::EntryBody(entry);
+                return res;
+            },
+            ZipReaderState::EntryTail(mut entry) => {
+                let n = self.write_entry_header(&entry, buf);
+
+                match self.files_iter.next() {
+                    Some(next_entry) => {
+                        self.state = ZipReaderState::EntryHeader(next_entry);
+                    },
+                    None => {
+
+                        self.state = ZipReaderState::CentralDirectory();
+                    }
+                }
+                // directory headers
+
+                return Ok(n);
+            },
             _ => {}
         }
         Ok(0)
     }
 }
 
-// impl<T> Read for ZipPacker<T> where T: AsMut<dyn Read> {
+// impl<T> Read for ZipPacker<T> where R: Read {
 //     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
 //         self.fill_out_buff();
 //         // self.buffer.advance()
