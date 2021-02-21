@@ -42,6 +42,23 @@ struct ZipEntry<T: AsMut<dyn Read>> {
     reader: T
 }
 
+impl<T: AsMut<dyn Read>> ZipEntry<T> {
+    pub fn write_local_file_header<B: BufMut>(&self, mut buff: B) {
+        buff.put_u32_le(0x04034b50);
+        buff.put_u16_le(0xA);
+        buff.put_u16_le(0b00000000_00001000);
+        buff.put_u16_le(0);
+        buff.put_u16_le(/*self.modification_time*/ 0);
+        buff.put_u16_le(/*self.modification_date*/ 0);
+        buff.put_u32_le(0);
+        buff.put_u32_le(0);
+        buff.put_u32_le(0);
+        buff.put_u16_le(self.name.len() as u16);
+        buff.put_u16_le(0);
+        buff.put_slice(self.name.as_bytes());
+    }
+}
+
 struct ZipPacker<T, I = Vec<ZipEntry<T>>> where T: AsMut<dyn Read>, I: IntoIterator<Item=ZipEntry<T>> {
     files: I
 }
@@ -108,25 +125,10 @@ impl<T: AsMut<dyn Read>, I: Iterator<Item=ZipEntry<T>>> ZipReader<T, I> {
 
     fn write_entry_header(&mut self, entry: &ZipEntry<T>, mut buff: &mut [u8]) {
         if buff.len() >= 30 + entry.name.len() {
-            Self::write_entry_header_impl(&entry, buff);
+            entry.write_local_file_header(buff);
         } else {
-            Self::write_entry_header_impl(&entry, buff.chain_mut(self.remainder.get_mut()));
+            entry.write_local_file_header(buff.chain_mut(self.remainder.get_mut()));
         }
-    }
-
-    fn write_entry_header_impl<T: BufMut>(entry: &ZipEntry<T>, mut buff: T) {
-        buff.put_u32_le(0x04034b50);
-        buff.put_u16_le(0xA);
-        buff.put_u16_le(0b00000000_00001000);
-        buff.put_u16_le(0);
-        buff.put_u16_le(/*self.modification_time*/ 0);
-        buff.put_u16_le(/*self.modification_date*/ 0);
-        buff.put_u32_le(0);
-        buff.put_u32_le(0);
-        buff.put_u32_le(0);
-        buff.put_u16_le(entry.name.len() as u16);
-        buff.put_u16_le(0);
-        buff.put_slice(entry.name.as_bytes());
     }
 }
 
