@@ -1,6 +1,6 @@
 extern crate bytes;
 
-use zip_stream::kappa;
+use zip_stream::{ZipPacker, ZipEntry};
 use std::fs::File;
 use std::io::{Read, BufReader, Write};
 use bytes::Buf;
@@ -47,11 +47,11 @@ use std::marker::PhantomData;
 // }
 
 
-// struct WW<T> where T: AsMut<dyn Read> {
+// struct WW<T> where R: Read {
 //     val: T,
 // }
 //
-// impl<T> WW<T> where T: AsMut<dyn Read> {
+// impl<T> WW<T> where R: Read {
 //     fn new(v: T) -> Self{
 //         Self {
 //             val: v,
@@ -76,4 +76,26 @@ use std::marker::PhantomData;
 // }
 
 fn main() {
+
+    let mut zip = ZipPacker::new();
+
+    zip.add_file(ZipEntry::new("Cargo.toml", File::open("Cargo.toml").unwrap()));
+    zip.add_file(ZipEntry::new("Cargo.lock", File::open("Cargo.lock").unwrap()));
+    zip.add_file(ZipEntry::new("examples/kappa.rs", File::open("examples/kappa.rs").unwrap()));
+
+    let mut zip = zip.reader();
+
+    let mut out = File::create("out.zip").unwrap();
+
+    // let mut buff = [0u8; 64*1024];
+    // while let Ok(n) = zip.read(&mut buff) {
+    //     if n > 0 {
+    //         out.write_all(&buff[..n]);
+    //     } else {
+    //         break;
+    //     }
+    // }
+
+    let res = std::io::copy(&mut zip, &mut out);
+    println!("{:?}", res);
 }
