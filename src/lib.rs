@@ -4,6 +4,7 @@ use bytes::buf::Limit;
 use std::cmp;
 use std::iter::Zip;
 
+use crc32fast::Hasher;
 pub fn kappa() -> u32 {
     1337
 }
@@ -42,8 +43,11 @@ impl LocalHeader {
 struct ZipEntry<R: Read> {
     name: String,
     reader: R,
+    modification_time: u16,
+    modification_date: u16,
     compressed_size: usize,
-    uncompressed_size: usize
+    uncompressed_size: usize,
+    crc32: u32
 }
 
 impl<R: Read> ZipEntry<R> {
@@ -104,7 +108,8 @@ impl<R, I> ZipPacker<R, I> where R: Read, I: IntoIterator<Item=ZipEntry<R>> {
         ZipReader {
             files_iter: self.files.into_iter(),
             state: ZipReaderState::Initial,
-            remainder: Cursor::new(Vec::new())
+            remainder: Cursor::new(Vec::new()),
+            central_directory: Cursor::new(Vec::new())
         }
     }
 }
@@ -116,7 +121,7 @@ impl<R: Read> ZipPacker<R> {
         }
     }
 
-    pub fn add_file<S: Into<String>>(&mut self, entry: ZipEntry<R>) {
+    pub fn add_file(&mut self, entry: ZipEntry<R>) {
         self.files.push(entry);
     }
 }
@@ -124,7 +129,7 @@ impl<R: Read> ZipPacker<R> {
 enum ZipReaderState<R: Read> {
     Initial,
     EntryHeader(ZipEntry<R>),
-    EntryBody(ZipEntry<R>),
+    EntryBody(ZipEntry<R>, Hasher),
     EntryTail(ZipEntry<R>),
     CentralDirectory
 }
@@ -134,14 +139,11 @@ struct ZipReader<R: Read, I: Iterator<Item=ZipEntry<R>>> {
 
     state: ZipReaderState<R>,
 
-    remainder: Cursor<Vec<u8>>
+    remainder: Cursor<Vec<u8>>,
+    central_directory: Cursor<Vec<u8>>
 }
 
 impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
-    fn advance(&mut self) {
-
-    }
-
     fn write_entry_header(&mut self, entry: &ZipEntry<R>, mut buff: &mut [u8]) -> usize {
         let mut n = cmp::min(entry.header_len(), buff.len());
         if buff.len() >= entry.header_len() {
@@ -153,6 +155,19 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
         return n;
     }
 
+    fn write_entry_body(&mut self, entry: &mut ZipEntry<R>, hasher: &mut Hasher, mut buff: &mut [u8]) -> std::io::Result<usize> {
+        let res = entry.reader.read(buff);
+        if let Ok(n) = res {
+            entry.uncompressed_size += n;
+            entry.compressed_size += n;
+            if n != 0 {
+                hasher.update(buff);
+            }
+        }
+
+        return res;
+    }
+
     fn write_entry_tail(&mut self, entry: &ZipEntry<R>, mut buff: &mut [u8]) -> usize {
         let mut n = cmp::min(entry.tail_header_len(), buff.len());
         if buff.len() >= entry.tail_header_len() {
@@ -162,6 +177,22 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
         }
 
         return n;
+    }
+
+    fn write_central_directory(&mut self, entry: &mut ZipEntry<R>) {
+        let buff = self.central_directory.get_mut();
+
+        buff.put_u32_le(0x02014b50);
+        buff.put_u16_le(0xA); // version made by
+        buff.put_u16_le(0xA); // version to extract
+        buff.put_u16_le(0b00000000_00001000); // general purpose bit flag
+        buff.put_u16_le(0); // compression method
+        buff.put_u16_le(0); // last mod file time
+        buff.put_u16_le(0); // last mod file date
+        buff.put_u32_le(entry.crc32); // crc32
+        buff.put_u32_le(0); // compressed size
+        buff.put_u32_le(0); // uncompressed size
+
     }
 }
 
@@ -182,28 +213,30 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> Read for ZipReader<R, I> {
                 let entry = self.files_iter.next().unwrap();
                 let n = self.write_entry_header(&entry, buf);
 
-                self.state = ZipReaderState::EntryBody(entry);
+                self.state = ZipReaderState::EntryBody(entry, Hasher::new());
 
                 return Ok(n);
             },
             ZipReaderState::EntryHeader(mut entry) => {
                 let n = self.write_entry_header(&entry, buf);
 
-                self.state = ZipReaderState::EntryBody(entry);
+                self.state = ZipReaderState::EntryBody(entry, Hasher::new());
 
                 return Ok(n);
             },
-            ZipReaderState::EntryBody(mut entry) => {
-                let res = entry.reader.read(buf);
+            ZipReaderState::EntryBody(mut entry, mut hasher) => {
+                let res = self.write_entry_body(&mut entry, &mut hasher, buf);
+
+
                 if let Ok(n) = res {
-                    entry.uncompressed_size += n;
-                    entry.compressed_size += n;
                     if n == 0 {
+                        entry.crc32 = hasher.finalize();
                         self.state = ZipReaderState::EntryTail(entry);
+
                         return Ok(0);
                     }
                 }
-                self.state = ZipReaderState::EntryBody(entry);
+                self.state = ZipReaderState::EntryBody(entry, hasher);
                 return res;
             },
             ZipReaderState::EntryTail(mut entry) => {
@@ -214,8 +247,7 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> Read for ZipReader<R, I> {
                         self.state = ZipReaderState::EntryHeader(next_entry);
                     },
                     None => {
-
-                        self.state = ZipReaderState::CentralDirectory();
+                        self.state = ZipReaderState::CentralDirectory;
                     }
                 }
                 // directory headers
