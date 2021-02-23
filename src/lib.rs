@@ -42,6 +42,7 @@ pub struct ZipEntry<R: Read> {
     reader: R,
     modification_time: u16,
     modification_date: u16,
+
     compressed_size: usize,
     uncompressed_size: usize,
     crc32: u32,
@@ -122,7 +123,11 @@ impl<R: Read> ZipPacker<R> {
         }
     }
 
-    pub fn add_file(&mut self, entry: ZipEntry<R>) {
+    pub fn add_file<S: Into<String>, R>(&mut self, name: S, entry: R) {
+        self.files.push(ZipEntry::new(name, entry));
+    }
+
+    pub fn add_entry(&mut self, entry: ZipEntry<R>) {
         self.files.push(entry);
     }
 }
