@@ -1,40 +1,10 @@
 use bytes::BufMut;
-use std::io::{Read, Cursor};
+use std::io::{Read, Cursor, Write};
 use std::cmp;
 
 use crc32fast::Hasher;
 use std::fmt::Formatter;
-
-// struct LocalHeader {
-//     pub signature: u32,
-//     pub version: u16,
-//     pub bit_flag: u16,
-//     pub compression: u16,
-//     pub modification_time: u16,
-//     pub modification_date: u16,
-//     pub crc32: u16,
-//     pub compressed_size: u32,
-//     pub uncompressed_size: u32,
-//     pub file_name: String,
-//     pub extra_field_length: u16
-// }
-//
-// impl LocalHeader {
-//     pub fn write_local_file_header<T: BufMut>(&self, buff: &mut T) {
-//         buff.put_u32_le(0x04034b50);
-//         buff.put_u16_le(self.version);
-//         buff.put_u16_le(0b00000000_00001000);
-//         buff.put_u16_le(0);
-//         buff.put_u16_le(self.modification_time);
-//         buff.put_u16_le(self.modification_date);
-//         buff.put_u32_le(0);
-//         buff.put_u32_le(0);
-//         buff.put_u32_le(0);
-//         buff.put_u16_le(self.file_name.len() as u16);
-//         buff.put_u16_le(0);
-//         buff.put_slice(self.file_name.as_bytes());
-//     }
-// }
+use std::fs::File;
 
 #[derive(Debug)]
 pub struct ZipEntry<R: Read> {
@@ -123,7 +93,7 @@ impl<R: Read> ZipPacker<R> {
         }
     }
 
-    pub fn add_file<S: Into<String>, R>(&mut self, name: S, entry: R) {
+    pub fn add_file<S: Into<String>>(&mut self, name: S, entry: R) {
         self.files.push(ZipEntry::new(name, entry));
     }
 
@@ -171,7 +141,7 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
         if buff.len() >= entry.header_len() {
             entry.write_local_file_header(buff);
         } else {
-            entry.write_local_file_header(buff.chain_mut(self.remainder.get_mut()));
+            entry.write_local_file_header(buff.chain_mut(self.remainder.get_mut().limit(usize::MAX - buff.len())));
         }
 
         self.offset += entry.header_len() as u64;
@@ -198,7 +168,7 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
         if buff.len() >= entry.tail_header_len() {
             entry.write_tail_header(buff);
         } else {
-            entry.write_tail_header(buff.chain_mut(self.remainder.get_mut()));
+            entry.write_tail_header(buff.chain_mut(self.remainder.get_mut().limit(usize::MAX - buff.len())));
         }
 
         self.offset += entry.tail_header_len() as u64;
@@ -324,14 +294,6 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> Read for ZipReader<R, I> {
         }
     }
 }
-
-// impl<T> Read for ZipPacker<T> where R: Read {
-//     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-//         self.fill_out_buff();
-//         // self.buffer.advance()
-//         Ok(0)
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

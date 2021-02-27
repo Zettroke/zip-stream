@@ -79,23 +79,29 @@ fn main() {
 
     let mut zip = ZipPacker::new();
 
-    zip.add_file(ZipEntry::new("Cargo.toml", File::open("Cargo.toml").unwrap()));
-    zip.add_file(ZipEntry::new("Cargo.lock", File::open("Cargo.lock").unwrap()));
-    zip.add_file(ZipEntry::new("examples/kappa.rs", File::open("examples/kappa.rs").unwrap()));
+    // zip.add_file(ZipEntry::new("Cargo.toml", File::open("Cargo.toml").unwrap()));
+    // zip.add_file(ZipEntry::new("Cargo.lock", File::open("Cargo.lock").unwrap()));
+    // zip.add_file(ZipEntry::new("examples/kappa.rs", File::open("examples/kappa.rs").unwrap()));
+    zip.add_file("zip-stream.zip", File::open("zip-stream.zip").unwrap());
 
     let mut zip = zip.reader();
 
     let mut out = File::create("out.zip").unwrap();
 
-    // let mut buff = [0u8; 64*1024];
-    // while let Ok(n) = zip.read(&mut buff) {
-    //     if n > 0 {
-    //         out.write_all(&buff[..n]);
-    //     } else {
-    //         break;
-    //     }
-    // }
 
-    let res = std::io::copy(&mut zip, &mut out);
-    println!("{:?}", res);
+    let start = std::time::Instant::now();
+
+    let mut buff = [0u8; 256*1024];
+    while let Ok(n) = zip.read(&mut buff) {
+        if n > 0 {
+            out.write_all(&buff[..n]);
+        } else {
+            break;
+        }
+    }
+
+    // let res = std::io::copy(&mut zip, &mut out);
+    let end = std::time::Instant::now();
+    // println!("{:?}", res);
+    println!("{}", (end - start).as_secs_f64());
 }
