@@ -6,6 +6,35 @@ use crc32fast::Hasher;
 use std::fmt::Formatter;
 use std::fs::File;
 
+trait Compressor {
+    /// red, written
+    fn compress(&mut self, in_buff: &mut impl Read, out: &mut [u8], hasher: &mut Hasher) -> (usize, usize);
+}
+
+struct DummyCompressor;
+
+
+impl Compressor for DummyCompressor {
+    #[inline]
+    fn compress(&mut self, in_buff: &mut impl Read, out: &mut [u8], hasher: &mut Hasher) -> (usize, usize) {
+        let res = in_buff.read(out).unwrap();
+        hasher.update(&out[..res]);
+        (res, res)
+    }
+}
+
+struct DeflateCompressor {
+    buff: [u8; 1024],
+    inner: flate2::Compress
+}
+
+impl Compressor for DeflateCompressor {
+    fn compress(&mut self, in_buff: &mut impl Read, out: &mut [u8], hasher: &mut Hasher) -> (usize, usize) {
+        self.inner.compress()
+        (0, 0)
+    }
+}
+
 #[derive(Debug)]
 pub struct ZipEntry<R: Read> {
     name: String,
@@ -123,10 +152,12 @@ impl<R: Read> std::fmt::Debug for ZipReaderState<R> {
     }
 }
 
-pub struct ZipReader<R: Read, I: Iterator<Item=ZipEntry<R>>> {
+pub struct ZipReader<R: Read, I: Iterator<Item=ZipEntry<R>>, Z: Compressor> {
     files_iter: I,
 
     state: ZipReaderState<R>,
+
+    compressor: Z,
 
     entries_count: u64,
     offset: u64,
@@ -135,7 +166,7 @@ pub struct ZipReader<R: Read, I: Iterator<Item=ZipEntry<R>>> {
     central_directory: Cursor<Vec<u8>>,
 }
 
-impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
+impl<R: Read, I: Iterator<Item=ZipEntry<R>>, Z: Compressor> ZipReader<R, I, Z> {
     fn write_entry_header(&mut self, entry: &ZipEntry<R>, buff: &mut [u8]) -> usize {
         let n = cmp::min(entry.header_len(), buff.len());
         if buff.len() >= entry.header_len() {
@@ -150,6 +181,8 @@ impl<R: Read, I: Iterator<Item=ZipEntry<R>>> ZipReader<R, I> {
     }
 
     fn write_entry_body(&mut self, entry: &mut ZipEntry<R>, hasher: &mut Hasher, buff: &mut [u8]) -> std::io::Result<usize> {
+
+        let (uncompressed, compressed) = self.compressor.compress(&mut entry.reader, buff);
         let res = entry.reader.read(buff);
         if let Ok(n) = res {
             entry.uncompressed_size += n;
