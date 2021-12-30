@@ -15,8 +15,10 @@ fn main() {
         if n == 0 {
             break;
         }
-        123usize.saturating_add()
-        println!("0x{:02X}", buff[0]);
+        println!("0x{:02X} {}", buff[0], buff[0] as char);
         out.write(&mut buff);
     }
+
+    let mut compressor = flate2::Compress::new(flate2::Compression::new(5), false);
+    compressor.compress()
 }
