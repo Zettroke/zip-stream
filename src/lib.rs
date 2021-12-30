@@ -6,6 +6,8 @@ use crc32fast::Hasher;
 use std::fmt::Formatter;
 use std::fs::File;
 
+pub mod writer;
+
 #[derive(Debug)]
 pub struct ZipEntry<R: Read> {
     name: String,

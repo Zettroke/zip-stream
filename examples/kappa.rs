@@ -2,7 +2,7 @@ extern crate bytes;
 
 use zip_stream::{ZipPacker, ZipEntry};
 use std::fs::File;
-use std::io::{Read, BufReader, Write};
+use std::io::{Read, BufReader, Write, Seek};
 use bytes::Buf;
 use std::ops::DerefMut;
 use std::marker::PhantomData;
@@ -75,7 +75,30 @@ use std::marker::PhantomData;
 //     return asd;
 // }
 
+
+struct Test<W> {
+    w: W
+}
+impl<W: Write> Test<W> {
+    fn test(&self) {
+        println!("Write only");
+    }
+}
+
+impl<W: Write + Seek> Test<W> {
+    fn test(&self) {
+        println!("Write and seek");
+    }
+}
+
 fn main() {
+
+    let t = Test {
+        w: File::open("examples/kappa.rs").unwrap()
+    };
+    t.test();
+
+    return;
 
     let mut zip = ZipPacker::new();
 
