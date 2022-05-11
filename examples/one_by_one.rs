@@ -1,24 +1,41 @@
-use zip_stream::ZipPacker;
-use std::fs::File;
-use std::io::{Read, Write};
+// use zip_stream::ZipPacker;
+// use std::fs::File;
+// use std::io::{Read, Write};
+
+use std::io::{Result, Write};
+
+
+
+// trait Compressor: Write {
+//     // fn write(&mut self, buff: &[u8]) -> Result<()>;
+//
+//     fn total_out(self) -> u64;
+// }
+//
+// struct Stored<W: Write> {
+//     inner: W,
+//     out: u64
+// }
+//
+// impl<W: Write> Write for Stored<W> {
+//     fn write(&mut self, buf: &[u8]) -> Result<usize> {
+//         let cnt = self.inner.write(buf)?;
+//         self.out += cnt;
+//
+//         Ok(cnt)
+//     }
+//
+//     fn flush(&mut self) -> Result<()> {
+//         self.inner.flush()
+//     }
+// }
+//
+// impl<W: Write> Compressor for Stored<W> {
+//
+//     fn total_out(self) -> u64 {
+//         self.out
+//     }
+// }
 
 fn main() {
-    let mut zip = ZipPacker::new();
-
-    zip.add_file("Cargo.toml", File::open("Cargo.toml").unwrap());
-
-    let mut reader = zip.reader();
-
-    let mut buff = [0u8; 1];
-    let mut out = File::create("out_one_by_one.zip").unwrap();
-    while let Ok(n) = reader.read(&mut buff) {
-        if n == 0 {
-            break;
-        }
-        println!("0x{:02X} {}", buff[0], buff[0] as char);
-        out.write(&mut buff);
-    }
-
-    let mut compressor = flate2::Compress::new(flate2::Compression::new(5), false);
-    compressor.compress()
 }

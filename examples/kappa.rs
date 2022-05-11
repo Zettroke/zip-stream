@@ -2,102 +2,55 @@ extern crate bytes;
 
 // use zip_stream::{ZipPacker, ZipEntry};
 use std::fs::File;
-use std::io::{Read, BufReader, Write, Seek};
-use bytes::Buf;
-use std::ops::DerefMut;
-use std::marker::PhantomData;
+use std::io::Write;
+use zip::CompressionMethod::Deflated;
+use zip::write::FileOptions;
 
 
-
-// pub trait AsMutRef<'a, T: ?Sized + 'a> {
-//     fn as_mut_ref(&'a mut self) -> &'a mut T;
-// }
-
-// impl <'a, T: ?Sized + 'a, R: AsMut<T>> AsMutRef<'a, T> for R {
-//     fn as_mut_ref(&'a mut self) -> &'a mut T {
-//         self.as_mut()
-//     }
-// }
-//
-// impl<'a, T: ?Sized + 'a> AsMutRef<'a, T> for &'a mut T {
-//     fn as_mut_ref(&'a mut self) -> &'a mut T {
-//         self
-//     }
-// }
-// // impl<'a, T: ?Sized + 'a> AsMutRef<'a, T> for Box<T> {
-// //     fn as_mut_ref(&'a mut self) -> &'a mut T {
-// //         &mut **self
-// //     }
-// // }
-//
-// impl<'a> AsMutRef<'a, dyn Read> for Box<dyn Read> {
-//     fn as_mut_ref(&'a mut self) -> &'a mut dyn Read {
-//         self.as_mut()
-//     }
-// }
-
-// impl<'a, T: ?Sized + 'a, R: AsMut<T>> AsMutRef<'a, T> for R {
-//     fn as_mut_ref(&'a mut self) -> &'a mut T {
-//         self.as_mut() as &'a mut T
-//     }
-// }
-//
-// struct WW<'a, T> where T: AsMutRef<'a, dyn Read> + 'a {
-//     val: T,
-//     phantom: PhantomData<&'a T>
-// }
-
-
-// struct WW<T> where R: Read {
-//     val: T,
-// }
-//
-// impl<T> WW<T> where R: Read {
-//     fn new(v: T) -> Self{
-//         Self {
-//             val: v,
-//         }
-//     }
-//
-//     pub fn test(&mut self) {
-//         let r = self.val.as_mut();
-//
-//         let mut s = String::new();
-//         r.read_to_string(&mut s);
-//         println!("{}", s);
-//     }
-// }
-
-// fn tst<'a>() -> WW<'a, &'a mut dyn Read> {
-//     let mut file = BufReader::new(File::open("./examples/test.txt").unwrap());
-//     let aa = &mut file as &mut dyn Read;
-//     let mut asd = WW::new(aa);
-//
-//     return asd;
-// }
-
-
-// struct Test<W> {
-//     w: W
-// }
-// impl<W: Write> Test<W> {
-//     fn test(&self) {
-//         println!("Write only");
-//     }
-// }
-//
-// impl<W: Write + Seek> Test<W> {
-//     fn test(&self) {
-//         println!("Write and seek");
-//     }
-// }
+use zip_stream::compressor::deflate::DeflateConfig;
+use zip_stream::writer::ZipWriter;
 
 fn main() {
-    let mut writer = zip_stream::writer::ZipWriter::new(File::create("test_out.zip").unwrap());
+    let mut out = Vec::new();
+    let mut writer = ZipWriter::new(&mut out);
 
-    writer.append_file("kappa.rs", File::open("examples/kappa.rs").unwrap()).unwrap();
+    {
+        let mut file_writer = writer
+            .start_file("test/test_kappa")
+            .compression(DeflateConfig::default())
+            .writer()
+            .unwrap();
+
+        std::io::copy(&mut "basically very smol file".as_bytes(), &mut file_writer).unwrap();
+
+        file_writer.finish().unwrap();
+
+    }
 
     writer.finish().unwrap();
+}
+
+fn main1() {
+
+    // panic!("Move file to RAM, do not rape your SSD!!!");
+    let mut writer = ZipWriter::new(File::create("test_out_zip_stream.zip").unwrap());
+
+    // writer.append_file("test_big", File::open("Cargo.lock").unwrap()).unwrap();
+    writer.start_file("test_big").compression(DeflateConfig::default()).write_data(File::open("Cargo.lock").unwrap()).unwrap();
+    let mut data =  b"test_data".iter().cycle();
+    writer.append("kappa/keeepo", b"test data" as &[u8]);
+
+    writer.finish().unwrap();
+
+
+    let mut writer = zip::ZipWriter::new(File::create("test_out_zip.zip").unwrap());
+
+    writer.start_file("test_big", FileOptions::default().compression_method(Deflated));
+
+    // writer.write()
+    std::io::copy(&mut "basically very smol file".as_bytes(), &mut writer);
+
+    writer.finish();
 
     return;
 
