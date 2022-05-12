@@ -232,6 +232,22 @@ impl<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W>> ZipEntryB
 /// To fix issue when user doesn't finish it's writer we implementing
 /// getter only we taking ownership of [ZipWriter], so user can't continue writing without finishing writing a file.
 /// It can be implemented using drop (although with some trouble), but type shenanigans is funnier
+///
+/// ```compile_fail
+/// use zip_stream::ZipWriter;
+/// let mut zip = ZipWriter::new(Vec::new());
+///
+/// zip.start_file_writer("test");
+///
+/// zip.finish();
+/// ```
+///
+/// ```compile_fail
+/// use zip_stream::ZipWriter;
+/// let mut zip = ZipWriter::new(Vec::new());
+///
+/// zip.start_file("test").writer();
+/// ```
 impl<P: AsRef<str>, W: WriterWrapper<Path=P> + WriterWrapperOwned, CC: CompressorConfig<W>> ZipEntryBuilder<P, W, CC>{
     pub fn writer(self) -> Result<ZipFileWriter<<CC as CompressorConfig<W>>::CompressorTarget, P, W>> {
         self.writer_inner()

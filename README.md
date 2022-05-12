@@ -2,30 +2,35 @@
 
 ```rust
 fn main() {
-    let mut out = Vec::new();
-    let mut writer = ZipWriter::new(&mut out);
+    let mut writer = ZipWriter::new(Vec::new());
 
-    writer.start_file("test_file").write_all("basically very smol file".as_bytes()).unwrap();
+    writer.append_data("test_file", b"basically very smol file").unwrap();
 
-    writer.finish().unwrap();
+    let _out = writer.finish().unwrap();
 }
 ```
 
 ```rust
 fn main() {
-    let mut out = Vec::new();
-    let mut writer = ZipWriter::new(&mut out);
+    let mut writer = ZipWriter::new(Vec::new());
 
-    {
-        let mut file_writer = writer
-            .start_file("test/test_kappa")
-            .compression(DeflateConfig::default())
-            .writer()
-            .unwrap();
+    writer
+        .start_file("test_file")
+        .write_all(b"basically very smol file")
+        .unwrap();
 
-        std::io::copy(&mut "basically very smol file".as_bytes(), &mut file_writer).unwrap();
-    }
+    let _out = writer.finish().unwrap();
+}
+```
 
-    writer.finish().unwrap();
+```rust
+fn main() {
+    let writer = ZipWriter::new(Cursor::new(Vec::new()));
+
+    let mut file_writer = writer.start_file_writer("test").writer().unwrap();
+    file_writer.write_all(data).unwrap();
+    
+    writer = file_writer.finish().unwrap();
+    let _out = writer.finish().unwrap();
 }
 ```
