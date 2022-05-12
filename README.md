@@ -16,6 +16,7 @@ fn main() {
 
     writer
         .start_file("test_file")
+        .modification(std::time::SystemTime::now()) // <- time feature
         .write_all(b"basically very smol file")
         .unwrap();
 
