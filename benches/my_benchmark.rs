@@ -1,8 +1,7 @@
 use std::io::{Cursor, Write};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use zip::CompressionMethod;
-use zip_stream::writer;
-use zip_stream::writer::ZipWriter;
+use zip_stream::ZipWriter;
 
 use zip::write::{FileOptions, ZipWriter as ZipWriterExternal};
 

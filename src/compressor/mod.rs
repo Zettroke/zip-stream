@@ -5,7 +5,7 @@ pub mod deflate;
 
 pub use store::{Store, StoreConfig};
 
-use crate::writer::Header;
+use crate::Header;
 use crc32fast::Hasher;
 
 pub trait CompressorConfig<W: WriterWrapper> where Self: Sized {
@@ -18,13 +18,16 @@ pub trait CompressorConfig<W: WriterWrapper> where Self: Sized {
 }
 
 
-/// Обертка над Write, позволяющая его достать, и писать напрямую
 pub trait WriterWrapper: Write {
+    type Inner;
     type Path: AsRef<str>;
 
     fn start_entry(&mut self, header: &mut Header<Self::Path>) -> Result<()>;
-    fn end_entry(&mut self, data: Header<Self::Path>) -> Result<()>;
+    fn end_entry(self, data: Header<Self::Path>) -> Result<Self::Inner>;
 }
+
+/// Marker trait to mark owned WriteWrapper, so we call allow creating writer for it
+pub trait WriterWrapperOwned {}
 
 pub trait Compressor: Write {
     type Inner: WriterWrapper;
@@ -73,14 +76,4 @@ impl<W: Write> HashWriteWrapper<W> {
         (self.hasher.finalize(), self.inner)
     }
 }
-
-// impl<W: WriterWrapper, P: AsRef<str>, C: Compressor<P, Inner=W>> Write for C {
-//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-//         todo!()
-//     }
-//
-//     fn flush(&mut self) -> std::io::Result<()> {
-//         todo!()
-//     }
-// }
 

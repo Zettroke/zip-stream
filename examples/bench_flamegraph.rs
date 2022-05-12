@@ -1,7 +1,7 @@
 use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
-use zip_stream::writer::ZipWriter;
+use zip_stream::ZipWriter;
 
 fn generate_data() -> Vec<String> {
     (0..10000).map(|n| n.to_string()).collect::<Vec<_>>()
