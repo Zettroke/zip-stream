@@ -1,5 +1,5 @@
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::io::{Cursor, Write};
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use zip::CompressionMethod;
 use zip_stream::ZipWriter;
 
@@ -15,7 +15,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
                 let mut writer = ZipWriter::new(&mut buff);
                 for i in 0..files_num {
-                    writer.append(i.to_string(), &mut "Test".as_bytes()).unwrap();
+                    writer
+                        .append(i.to_string(), &mut "Test".as_bytes())
+                        .unwrap();
                 }
 
                 writer.finish().unwrap();
@@ -33,7 +35,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 let mut writer = ZipWriterExternal::new(&mut buff);
 
                 for i in 0..files_num {
-                    writer.start_file(i.to_string(), FileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+                    writer
+                        .start_file(
+                            i.to_string(),
+                            FileOptions::default().compression_method(CompressionMethod::Stored),
+                        )
+                        .unwrap();
 
                     writer.write_all("Test".as_bytes()).unwrap();
                 }

@@ -4,19 +4,16 @@ use std::fs::File;
 use std::io::{Read, Result, Write};
 use std::marker::PhantomData;
 
-#[cfg(feature="time")]
-use {
-    std::time::SystemTime,
-    time::OffsetDateTime
+#[cfg(feature = "time")]
+use {std::time::SystemTime, time::OffsetDateTime};
+
+use crate::compressor::{
+    Compressor, CompressorConfig, HashWriteWrapper, Store, WriterWrapper, WriterWrapperOwned,
 };
-
-
-use crate::compressor::{Compressor, CompressorConfig, HashWriteWrapper, Store, WriterWrapper, WriterWrapperOwned};
 pub use crate::zip_impl::{Header, ZipWriter};
 
-mod zip_impl;
 pub mod compressor;
-
+mod zip_impl;
 
 impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
     pub fn new(write: W) -> ZipWriter<W, P> {
@@ -28,9 +25,11 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
     }
 
     pub fn append_file(&mut self, path: P, file: File) -> Result<()> {
-        #[cfg(feature="time")]
-        self.start_file(path).modification_from_file(&file).write_data(file)?;
-        #[cfg(not(feature="time"))]
+        #[cfg(feature = "time")]
+        self.start_file(path)
+            .modification_from_file(&file)
+            .write_data(file)?;
+        #[cfg(not(feature = "time"))]
         self.start_file(path).write_data(file)?;
 
         Ok(())
@@ -48,22 +47,28 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
         Ok(())
     }
 
-    pub fn start_file(&mut self, path: P) -> ZipEntryBuilder<P, ZipWriterWrapper<&mut Self, W, P>, compressor::StoreConfig>
-    {
+    pub fn start_file(
+        &mut self,
+        path: P,
+    ) -> ZipEntryBuilder<P, ZipWriterWrapper<&mut Self, W, P>, compressor::StoreConfig> {
         ZipEntryBuilder {
             header: Header::builder(),
             writer: ZipWriterWrapper(self, PhantomData),
-            compressor_config: compressor::StoreConfig
-        }.path(path)
+            compressor_config: compressor::StoreConfig,
+        }
+        .path(path)
     }
 
-    pub fn start_file_writer(self, path: P) -> ZipEntryBuilder<P, ZipWriterWrapper<Self, W, P>, compressor::StoreConfig>
-    {
+    pub fn start_file_writer(
+        self,
+        path: P,
+    ) -> ZipEntryBuilder<P, ZipWriterWrapper<Self, W, P>, compressor::StoreConfig> {
         ZipEntryBuilder {
             header: Header::builder(),
             writer: ZipWriterWrapper(self, PhantomData),
-            compressor_config: compressor::StoreConfig
-        }.path(path)
+            compressor_config: compressor::StoreConfig,
+        }
+        .path(path)
     }
 
     pub fn finish(self) -> Result<W> {
@@ -78,7 +83,10 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
 
 /// It's needed to hide [Write] implementation on ZipWriter,
 /// so user can't screw up format by writing random bytes
-pub struct ZipWriterWrapper<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>>(T, PhantomData<(W, P)>);
+pub struct ZipWriterWrapper<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>>(
+    T,
+    PhantomData<(W, P)>,
+);
 
 impl<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>> Write for ZipWriterWrapper<T, W, P> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
@@ -94,14 +102,15 @@ impl<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>> Write for ZipWriterWrap
     }
 }
 
-impl<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>> WriterWrapper for ZipWriterWrapper<T, W, P> {
+impl<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>> WriterWrapper
+    for ZipWriterWrapper<T, W, P>
+{
     type Inner = T;
     type Path = P;
 
     fn start_entry(&mut self, header: &mut Header<Self::Path>) -> Result<()> {
         self.0.as_mut().write_entry_header(header)
     }
-
 
     fn end_entry(mut self, entry: Header<Self::Path>) -> Result<Self::Inner> {
         self.0.as_mut().position += entry.compressed_size;
@@ -111,16 +120,29 @@ impl<T: AsMut<ZipWriter<W, P>>, W: Write, P: AsRef<str>> WriterWrapper for ZipWr
     }
 }
 
-
-impl<W: Write, P: AsRef<str>> WriterWrapperOwned for ZipWriterWrapper<ZipWriter<W, P>, W, P> {}
-
-
-pub struct ZipFileWriter<C: Compressor<Inner=ZIP>, P: AsRef<str>, ZIP: WriterWrapper<Path=P>> {
-    inner: HashWriteWrapper<C>,
-    header: Header<P>
+impl<W, P> WriterWrapperOwned for ZipWriterWrapper<ZipWriter<W, P>, W, P>
+where
+    W: Write,
+    P: AsRef<str>,
+{
 }
 
-impl<C: Compressor<Inner=ZIP>, P: AsRef<str>, ZIP: WriterWrapper<Path=P>> ZipFileWriter<C, P, ZIP> {
+pub struct ZipFileWriter<C, P, ZIP>
+where
+    C: Compressor<Inner = ZIP>,
+    P: AsRef<str>,
+    ZIP: WriterWrapper<Path = P>,
+{
+    inner: HashWriteWrapper<C>,
+    header: Header<P>,
+}
+
+impl<C, P, ZIP> ZipFileWriter<C, P, ZIP>
+where
+    P: AsRef<str>,
+    C: Compressor<Inner = ZIP>,
+    ZIP: WriterWrapper<Path = P>,
+{
     pub fn finish(self) -> Result<ZIP::Inner> {
         let (crc32, writer) = self.inner.finish();
         let (entry_data, writer) = writer.finish()?;
@@ -135,7 +157,12 @@ impl<C: Compressor<Inner=ZIP>, P: AsRef<str>, ZIP: WriterWrapper<Path=P>> ZipFil
     }
 }
 
-impl<C: Compressor<Inner=ZIP>, P: AsRef<str>, ZIP: WriterWrapper<Path=P>> Write for ZipFileWriter<C, P, ZIP> {
+impl<C, P, ZIP> Write for ZipFileWriter<C, P, ZIP>
+where
+    C: Compressor<Inner = ZIP>,
+    P: AsRef<str>,
+    ZIP: WriterWrapper<Path = P>,
+{
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.inner.write(buf)
     }
@@ -149,18 +176,31 @@ impl<C: Compressor<Inner=ZIP>, P: AsRef<str>, ZIP: WriterWrapper<Path=P>> Write 
     }
 }
 
-pub struct ZipEntryBuilder<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W> = Store<W>> {
+pub struct ZipEntryBuilder<P, W, CC = Store<W>>
+where
+    P: AsRef<str>,
+    W: WriterWrapper<Path = P>,
+    CC: CompressorConfig<W>,
+{
     header: HeaderBuilder<P>,
     compressor_config: CC,
-    writer: W
+    writer: W,
 }
 
-impl<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W>> ZipEntryBuilder<P, W, CC>{
-    pub fn compression<NewCC: CompressorConfig<W>>(self, compressor_config: NewCC) -> ZipEntryBuilder<P, W, NewCC> {
+impl<P, W, CC> ZipEntryBuilder<P, W, CC>
+where
+    P: AsRef<str>,
+    W: WriterWrapper<Path = P>,
+    CC: CompressorConfig<W>,
+{
+    pub fn compression<NewCC: CompressorConfig<W>>(
+        self,
+        compressor_config: NewCC,
+    ) -> ZipEntryBuilder<P, W, NewCC> {
         ZipEntryBuilder {
             compressor_config,
             header: self.header,
-            writer: self.writer
+            writer: self.writer,
         }
     }
 
@@ -169,38 +209,40 @@ impl<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W>> ZipEntryB
         self
     }
 
-    #[cfg(feature="time")]
+    #[cfg(feature = "time")]
     pub fn modification(self, time: SystemTime) -> Self {
         let date_time = OffsetDateTime::from(time);
         self.modification_date_time(date_time)
     }
 
-    #[cfg(feature="time")]
+    #[cfg(feature = "time")]
     pub fn modification_date_time(mut self, date_time: OffsetDateTime) -> Self {
         self.header.modification_time = Some(
             (date_time.second() / 2) as u16 | // 0-4 bits
                 (date_time.minute() as u16) << 5 | // 5-10 bits
-                (date_time.hour() as u16) << 11 // 11-15 bits
+                (date_time.hour() as u16) << 11, // 11-15 bits
         );
         self.header.modification_date = Some(
             (date_time.day() as u16) | // 0-4 bits
                 ((date_time.month() as u16) << 5) | // 5-8 bits
-                ((date_time.year() - 1980) as u16) << 9 // 9-15 bits
+                ((date_time.year() - 1980) as u16) << 9, // 9-15 bits
         );
 
         self
     }
 
-    #[cfg(feature="time")]
+    #[cfg(feature = "time")]
     pub fn modification_from_file(self, file: &File) -> Self {
-        let modified_at = file.metadata().ok()
+        let modified_at = file
+            .metadata()
+            .ok()
             .and_then(|m| m.modified().ok())
-            .unwrap_or_else(|| SystemTime::now());
+            .unwrap_or_else(SystemTime::now);
 
         self.modification(modified_at)
     }
 
-    fn writer_inner(mut self) -> Result<ZipFileWriter<<CC as CompressorConfig<W>>::CompressorTarget, P, W>> {
+    fn writer_inner(mut self) -> Result<ZipFileWriter<CC::CompressorTarget, P, W>> {
         let mut header = self.header.build::<CC, W>();
         self.writer.start_entry(&mut header)?;
 
@@ -208,7 +250,7 @@ impl<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W>> ZipEntryB
 
         Ok(ZipFileWriter {
             inner: HashWriteWrapper::new(compressor),
-            header
+            header,
         })
     }
 
@@ -248,12 +290,16 @@ impl<P: AsRef<str>, W: WriterWrapper<Path=P>, CC: CompressorConfig<W>> ZipEntryB
 ///
 /// zip.start_file("test").writer();
 /// ```
-impl<P: AsRef<str>, W: WriterWrapper<Path=P> + WriterWrapperOwned, CC: CompressorConfig<W>> ZipEntryBuilder<P, W, CC>{
-    pub fn writer(self) -> Result<ZipFileWriter<<CC as CompressorConfig<W>>::CompressorTarget, P, W>> {
+impl<P, W, CC> ZipEntryBuilder<P, W, CC>
+where
+    P: AsRef<str>,
+    W: WriterWrapper<Path = P> + WriterWrapperOwned,
+    CC: CompressorConfig<W>,
+{
+    pub fn writer(self) -> Result<ZipFileWriter<CC::CompressorTarget, P, W>> {
         self.writer_inner()
     }
 }
-
 
 pub struct HeaderBuilder<P: AsRef<str>> {
     path: Option<P>,
@@ -262,7 +308,6 @@ pub struct HeaderBuilder<P: AsRef<str>> {
 }
 
 impl<P: AsRef<str>> HeaderBuilder<P> {
-
     pub fn build<CC: CompressorConfig<W>, W: WriterWrapper>(self) -> Header<P> {
         Header {
             compression_id: CC::CompressorTarget::compression_id(),
@@ -292,11 +337,11 @@ mod tests {
     extern crate test;
 
     use std::fs::File;
-    use std::io::{Cursor, Read, repeat, Write};
+    use std::io::{repeat, Cursor, Read, Write};
     use test::Bencher;
 
-    use zip::CompressionMethod;
     use zip::write::FileOptions;
+    use zip::CompressionMethod;
 
     use crate::compressor::deflate::DeflateConfig;
     use crate::ZipWriter;
@@ -315,7 +360,11 @@ mod tests {
         file.flush().unwrap();
         drop(file);
 
-        let child = std::process::Command::new("unzip").arg("-t").arg(file_name).spawn().unwrap();
+        let child = std::process::Command::new("unzip")
+            .arg("-t")
+            .arg(file_name)
+            .spawn()
+            .unwrap();
 
         let output = child.wait_with_output().unwrap();
         std::fs::remove_file(file_name).unwrap();
@@ -341,7 +390,10 @@ mod tests {
         }
 
         let file = archive.by_index(0).unwrap();
-        assert!(file.bytes().map(Result::unwrap).eq((data as &[u8]).bytes().map(Result::unwrap)));
+        assert!(file
+            .bytes()
+            .map(Result::unwrap)
+            .eq((data as &[u8]).bytes().map(Result::unwrap)));
     }
 
     #[test]
@@ -350,7 +402,11 @@ mod tests {
         let mut out = Cursor::new(Vec::new());
 
         let mut writer = ZipWriter::new(&mut out);
-        writer.start_file("test").compression(DeflateConfig::best()).write_data(data).unwrap();
+        writer
+            .start_file("test")
+            .compression(DeflateConfig::best())
+            .write_data(data)
+            .unwrap();
         writer.finish().unwrap();
 
         out.set_position(0);
@@ -363,7 +419,10 @@ mod tests {
         }
 
         let file = archive.by_index(0).unwrap();
-        assert!(file.bytes().map(Result::unwrap).eq((data as &[u8]).bytes().map(Result::unwrap)));
+        assert!(file
+            .bytes()
+            .map(Result::unwrap)
+            .eq((data as &[u8]).bytes().map(Result::unwrap)));
     }
 
     #[test]
@@ -399,11 +458,13 @@ mod tests {
             out.set_position(0);
             let mut writer = ZipWriter::new(&mut out);
 
-            writer.start_file("test_kappa").write_all("basically very smol file".as_bytes()).unwrap();
+            writer
+                .start_file("test_kappa")
+                .write_all("basically very smol file".as_bytes())
+                .unwrap();
 
             writer.finish().unwrap();
         });
-
     }
 
     #[bench]
@@ -414,14 +475,19 @@ mod tests {
             out.set_position(0);
             let mut writer = zip::write::ZipWriter::new(&mut out);
 
-            writer.start_file("test_kappa", FileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
-            writer.write_all("basically very smol file".as_bytes()).unwrap();
+            writer
+                .start_file(
+                    "test_kappa",
+                    FileOptions::default().compression_method(CompressionMethod::Stored),
+                )
+                .unwrap();
+            writer
+                .write_all("basically very smol file".as_bytes())
+                .unwrap();
 
             writer.finish().unwrap();
         });
-
     }
-
 
     #[bench]
     fn bench_many_small_files_zip_stream(b: &mut Bencher) {
@@ -432,7 +498,10 @@ mod tests {
             out.set_position(0);
             let mut writer = ZipWriter::new(&mut out);
             for v in data.iter() {
-                writer.start_file("test_kappa").write_all(v.as_bytes()).unwrap();
+                writer
+                    .start_file("test_kappa")
+                    .write_all(v.as_bytes())
+                    .unwrap();
             }
 
             writer.finish().unwrap();
@@ -448,7 +517,12 @@ mod tests {
             out.set_position(0);
             let mut writer = zip::write::ZipWriter::new(&mut out);
             for v in data.iter() {
-                writer.start_file("test_kappa", FileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+                writer
+                    .start_file(
+                        "test_kappa",
+                        FileOptions::default().compression_method(CompressionMethod::Stored),
+                    )
+                    .unwrap();
                 writer.write_all(v.as_bytes()).unwrap();
             }
 
@@ -465,7 +539,11 @@ mod tests {
             out.set_position(0);
             let mut writer = ZipWriter::new(&mut out);
             for v in data.iter() {
-                writer.start_file("test_kappa").compression(DeflateConfig::default()).write_data(v.as_bytes()).unwrap();
+                writer
+                    .start_file("test_kappa")
+                    .compression(DeflateConfig::default())
+                    .write_data(v.as_bytes())
+                    .unwrap();
             }
 
             writer.finish().unwrap();
@@ -481,7 +559,12 @@ mod tests {
             out.set_position(0);
             let mut writer = zip::write::ZipWriter::new(&mut out);
             for v in data.iter() {
-                writer.start_file("test_kappa", FileOptions::default().compression_method(CompressionMethod::Deflated)).unwrap();
+                writer
+                    .start_file(
+                        "test_kappa",
+                        FileOptions::default().compression_method(CompressionMethod::Deflated),
+                    )
+                    .unwrap();
                 writer.write_all(v.as_bytes()).unwrap();
             }
 
@@ -497,11 +580,12 @@ mod tests {
             out.set_position(0);
             let mut writer = ZipWriter::new(&mut out);
 
-            writer.append("test_kappa", repeat(123u8).take(10*1024*1024)).unwrap();
+            writer
+                .append("test_kappa", repeat(123u8).take(10 * 1024 * 1024))
+                .unwrap();
 
             writer.finish().unwrap();
         });
-
     }
 
     #[bench]
@@ -512,11 +596,15 @@ mod tests {
             out.set_position(0);
             let mut writer = zip::write::ZipWriter::new(&mut out);
 
-            writer.start_file("test_kappa", FileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
-            std::io::copy(&mut repeat(123u8).take(10*1024*1024), &mut writer).unwrap();
+            writer
+                .start_file(
+                    "test_kappa",
+                    FileOptions::default().compression_method(CompressionMethod::Stored),
+                )
+                .unwrap();
+            std::io::copy(&mut repeat(123u8).take(10 * 1024 * 1024), &mut writer).unwrap();
 
             writer.finish().unwrap();
         });
-
     }
 }

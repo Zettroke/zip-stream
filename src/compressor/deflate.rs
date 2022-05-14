@@ -1,7 +1,7 @@
-use std::io::Write;
-use flate2::write::DeflateEncoder;
 use crate::compressor::{Compressor, CompressorConfig, EntryData, WriterWrapper};
+use flate2::write::DeflateEncoder;
 use std::io::Result;
+use std::io::Write;
 
 pub use flate2::Compression as DeflateConfig;
 
@@ -29,7 +29,7 @@ impl<W: WriterWrapper> Compressor for Deflate<W> {
 
     fn new(config: Self::Config, inner: Self::Inner) -> Self {
         Self {
-            inner: DeflateEncoder::new(inner, config)
+            inner: DeflateEncoder::new(inner, config),
         }
     }
 
@@ -42,10 +42,9 @@ impl<W: WriterWrapper> Compressor for Deflate<W> {
         Ok((
             EntryData {
                 uncompressed_size: self.inner.total_in(),
-                compressed_size: self.inner.total_out()
+                compressed_size: self.inner.total_out(),
             },
-            self.inner.finish()?
+            self.inner.finish()?,
         ))
-
     }
 }

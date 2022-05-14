@@ -1,12 +1,11 @@
-use std::io::{Write, Result};
-use crate::compressor::{Compressor, EntryData, WriterWrapper, CompressorConfig};
+use crate::compressor::{Compressor, CompressorConfig, EntryData, WriterWrapper};
+use std::io::{Result, Write};
 
 pub struct StoreConfig;
 
 impl<W: WriterWrapper> CompressorConfig<W> for StoreConfig {
     type CompressorTarget = Store<W>;
 }
-
 
 pub struct Store<W: WriterWrapper> {
     inner: W,
@@ -38,10 +37,7 @@ impl<W: WriterWrapper> Compressor for Store<W> {
     type Inner = W;
     type Config = StoreConfig;
     fn new(_config: Self::Config, inner: W) -> Self {
-        Store {
-            inner,
-            out: 0,
-        }
+        Store { inner, out: 0 }
     }
 
     fn compression_id() -> u16 {
@@ -54,7 +50,7 @@ impl<W: WriterWrapper> Compressor for Store<W> {
                 uncompressed_size: self.out,
                 compressed_size: self.out,
             },
-            self.inner
+            self.inner,
         ))
     }
 }

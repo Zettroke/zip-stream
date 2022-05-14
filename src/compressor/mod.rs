@@ -1,22 +1,24 @@
-use std::io::{Write, Result};
+use std::io::{Result, Write};
 
-pub mod store;
 pub mod deflate;
+pub mod store;
 
 pub use store::{Store, StoreConfig};
 
 use crate::Header;
 use crc32fast::Hasher;
 
-pub trait CompressorConfig<W: WriterWrapper> where Self: Sized {
+pub trait CompressorConfig<W: WriterWrapper>
+where
+    Self: Sized,
+{
     // TODO: wait for GAT stabilization and make generic over W
-    type CompressorTarget: Compressor<Config=Self, Inner=W>;
+    type CompressorTarget: Compressor<Config = Self, Inner = W>;
 
     fn build(self, inner: <Self::CompressorTarget as Compressor>::Inner) -> Self::CompressorTarget {
         Self::CompressorTarget::new(self, inner)
     }
 }
-
 
 pub trait WriterWrapper: Write {
     type Inner;
@@ -45,7 +47,7 @@ pub struct EntryData {
 
 pub struct HashWriteWrapper<W: Write> {
     inner: W,
-    hasher: Hasher
+    hasher: Hasher,
 }
 
 impl<W: Write> Write for HashWriteWrapper<W> {
@@ -68,7 +70,7 @@ impl<W: Write> HashWriteWrapper<W> {
     pub fn new(inner: W) -> Self {
         Self {
             inner,
-            hasher: Hasher::new()
+            hasher: Hasher::new(),
         }
     }
 
@@ -76,4 +78,3 @@ impl<W: Write> HashWriteWrapper<W> {
         (self.hasher.finalize(), self.inner)
     }
 }
-

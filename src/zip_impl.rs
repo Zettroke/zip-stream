@@ -1,7 +1,7 @@
-use std::cmp::min;
-use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
+use std::cmp::min;
 use std::io::Result;
+use std::io::Write;
 
 #[derive(Debug)]
 pub struct Header<P: AsRef<str>> {
@@ -43,14 +43,20 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
 
         self.write.write_u32::<LittleEndian>(0x04034b50)?; // magic number
         self.write.write_u16::<LittleEndian>(0x2D)?; // version
-        self.write.write_u16::<LittleEndian>(0b00000000_00001000 | ((!header.path_str().is_ascii() as u16) << 11))?; // general purpose flag
-        self.write.write_u16::<LittleEndian>(header.compression_id)?; // compression method
-        self.write.write_u16::<LittleEndian>(header.modification_time)?; // modification_time
-        self.write.write_u16::<LittleEndian>(header.modification_date)?; // modification_date
+        self.write.write_u16::<LittleEndian>(
+            0b0000_0000_0000_1000 | ((!header.path_str().is_ascii() as u16) << 11),
+        )?; // general purpose flag
+        self.write
+            .write_u16::<LittleEndian>(header.compression_id)?; // compression method
+        self.write
+            .write_u16::<LittleEndian>(header.modification_time)?; // modification_time
+        self.write
+            .write_u16::<LittleEndian>(header.modification_date)?; // modification_date
         self.write.write_u32::<LittleEndian>(0)?; // crc-32
         self.write.write_u32::<LittleEndian>(0xFFFFFFFF)?; // compressed size
         self.write.write_u32::<LittleEndian>(0xFFFFFFFF)?; // uncompressed size
-        self.write.write_u16::<LittleEndian>(header.path_bytes().len() as u16)?; // file name length
+        self.write
+            .write_u16::<LittleEndian>(header.path_bytes().len() as u16)?; // file name length
         self.write.write_u16::<LittleEndian>(20)?; // extra field length
         self.write.write_all(header.path_bytes())?; // path
 
@@ -69,13 +75,17 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
         self.write.write_u32::<LittleEndian>(header.crc32)?;
 
         if header.uncompressed_size < 0xFFFFFFFF && header.compressed_size < 0xFFFFFFFF {
-            self.write.write_u32::<LittleEndian>(header.uncompressed_size as u32)?;
-            self.write.write_u32::<LittleEndian>(header.compressed_size as u32)?;
+            self.write
+                .write_u32::<LittleEndian>(header.uncompressed_size as u32)?;
+            self.write
+                .write_u32::<LittleEndian>(header.compressed_size as u32)?;
 
             self.position += 16;
         } else {
-            self.write.write_u64::<LittleEndian>(header.uncompressed_size)?;
-            self.write.write_u64::<LittleEndian>(header.compressed_size)?;
+            self.write
+                .write_u64::<LittleEndian>(header.uncompressed_size)?;
+            self.write
+                .write_u64::<LittleEndian>(header.compressed_size)?;
 
             self.position += 24;
         }
@@ -88,35 +98,52 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
         let mut central_directory_size = 0u64;
         let central_directory_offset = self.position;
         for header in self.entries {
-            let overflow_fields =
-                (header.uncompressed_size >= 0xFFFFFFFF || header.compressed_size >= 0xFFFFFFFF) as u16 * 2 +
-                    (header.offset >= 0xFFFFFFFF) as u16;
+            let overflow_fields = (header.uncompressed_size >= 0xFFFFFFFF
+                || header.compressed_size >= 0xFFFFFFFF) as u16
+                * 2
+                + (header.offset >= 0xFFFFFFFF) as u16;
 
             self.write.write_u32::<LittleEndian>(0x02014b50)?; // signature
             self.write.write_u16::<LittleEndian>(0x2D)?; // version made by
             self.write.write_u16::<LittleEndian>(0x2D)?; // version to extract
-            self.write.write_u16::<LittleEndian>(0b00000000_00001000 | ((!header.path_str().is_ascii() as u16) << 11))?; // general purpose bit flag
-            self.write.write_u16::<LittleEndian>(header.compression_id)?; // compression method
-            self.write.write_u16::<LittleEndian>(header.modification_time)?; // last mod file time
-            self.write.write_u16::<LittleEndian>(header.modification_date)?; // last mod file date
+            self.write.write_u16::<LittleEndian>(
+                0b0000_0000_0000_1000 | ((!header.path_str().is_ascii() as u16) << 11),
+            )?; // general purpose bit flag
+            self.write
+                .write_u16::<LittleEndian>(header.compression_id)?; // compression method
+            self.write
+                .write_u16::<LittleEndian>(header.modification_time)?; // last mod file time
+            self.write
+                .write_u16::<LittleEndian>(header.modification_date)?; // last mod file date
             self.write.write_u32::<LittleEndian>(header.crc32)?; // crc32
-            self.write.write_u32::<LittleEndian>(min(header.compressed_size, 0xFFFFFFFF) as u32)?; // compressed size
-            self.write.write_u32::<LittleEndian>(min(header.uncompressed_size, 0xFFFFFFFF) as u32)?; // uncompressed size
-            self.write.write_u16::<LittleEndian>(header.path_bytes().len() as u16)?; // file name length
-            self.write.write_u16::<LittleEndian>(if overflow_fields > 0 { 4 + 8 * overflow_fields } else { 0 })?; // extra field length
+            self.write
+                .write_u32::<LittleEndian>(min(header.compressed_size, 0xFFFFFFFF) as u32)?; // compressed size
+            self.write
+                .write_u32::<LittleEndian>(min(header.uncompressed_size, 0xFFFFFFFF) as u32)?; // uncompressed size
+            self.write
+                .write_u16::<LittleEndian>(header.path_bytes().len() as u16)?; // file name length
+            self.write
+                .write_u16::<LittleEndian>(if overflow_fields > 0 {
+                    4 + 8 * overflow_fields
+                } else {
+                    0
+                })?; // extra field length
             self.write.write_u16::<LittleEndian>(0)?; // file comment length
             self.write.write_u16::<LittleEndian>(0)?; // disk number start
             self.write.write_u16::<LittleEndian>(0)?; // internal file attributes
             self.write.write_u32::<LittleEndian>(0)?; // external file attributes
-            self.write.write_u32::<LittleEndian>(min(header.offset, 0xFFFFFFFF) as u32)?; // relative offset of local header
+            self.write
+                .write_u32::<LittleEndian>(min(header.offset, 0xFFFFFFFF) as u32)?; // relative offset of local header
             self.write.write_all(header.path_bytes())?; // file name
             if overflow_fields > 0 {
                 self.write.write_u16::<LittleEndian>(0x0001)?; // header id (ZIP64)
                 self.write.write_u16::<LittleEndian>(8 * overflow_fields)?;
 
                 if header.uncompressed_size >= 0xFFFFFFFF || header.compressed_size >= 0xFFFFFFFF {
-                    self.write.write_u64::<LittleEndian>(header.uncompressed_size)?;
-                    self.write.write_u64::<LittleEndian>(header.compressed_size)?;
+                    self.write
+                        .write_u64::<LittleEndian>(header.uncompressed_size)?;
+                    self.write
+                        .write_u64::<LittleEndian>(header.compressed_size)?;
                 }
 
                 if header.offset >= 0xFFFFFFFF {
@@ -142,9 +169,10 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
         self.write.write_u32::<LittleEndian>(0)?; // disk where central directory starts
         self.write.write_u64::<LittleEndian>(entries_count)?; // Number of central directory records on this disk
         self.write.write_u64::<LittleEndian>(entries_count)?; // Total number of central directory records
-        self.write.write_u64::<LittleEndian>(central_directory_size)?;
-        self.write.write_u64::<LittleEndian>(central_directory_offset)?; // offset of central directory
-
+        self.write
+            .write_u64::<LittleEndian>(central_directory_size)?;
+        self.write
+            .write_u64::<LittleEndian>(central_directory_offset)?; // offset of central directory
 
         // zip64
         self.write.write_u32::<LittleEndian>(0x07064b50)?;
@@ -158,8 +186,10 @@ impl<W: Write, P: AsRef<str>> ZipWriter<W, P> {
         self.write.write_u16::<LittleEndian>(0)?; // disk where central directory starts
         self.write.write_u16::<LittleEndian>(entries_count as u16)?; // number of central directory records on this disk
         self.write.write_u16::<LittleEndian>(entries_count as u16)?; // number of central directory records total
-        self.write.write_u32::<LittleEndian>(min(central_directory_size, 0xFFFFFFFF) as u32)?; // size of the central directory
-        self.write.write_u32::<LittleEndian>(min(central_directory_offset, 0xFFFFFFFF) as u32)?; // offset of central directory
+        self.write
+            .write_u32::<LittleEndian>(min(central_directory_size, 0xFFFFFFFF) as u32)?; // size of the central directory
+        self.write
+            .write_u32::<LittleEndian>(min(central_directory_offset, 0xFFFFFFFF) as u32)?; // offset of central directory
         self.write.write_u16::<LittleEndian>(0)?; // zip comment length
 
         Ok(self.write)
